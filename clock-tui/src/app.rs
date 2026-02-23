@@ -139,7 +139,28 @@ impl App {
         self.init_app();
     }
 
+    pub fn set_mode_if_inactive(&mut self, mode: Mode) {
+        if !self.is_mode_active(&mode) {
+            self.set_mode(mode);
+        }
+    }
+
+    pub fn is_mode_active(&self, mode: &Mode) -> bool {
+        match mode {
+            Mode::Clock { .. } => self.clock.is_some(),
+            Mode::Timer { .. } => self.timer.is_some(),
+            Mode::Stopwatch => self.stopwatch.is_some(),
+            Mode::Countdown { .. } => self.countdown.is_some(),
+        }
+    }
+
     pub fn init_app(&mut self) {
+        // Keep active widget state mutually exclusive across mode switches.
+        self.clock = None;
+        self.timer = None;
+        self.stopwatch = None;
+        self.countdown = None;
+
         // Load config
         let config = Config::load();
         let default_config = config.as_ref().map(|c| &c.default);
@@ -480,7 +501,7 @@ fn parse_timezone(s: &str) -> Result<Tz, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_duration;
+    use super::{parse_duration, App, Mode};
     use chrono::Duration;
 
     #[test]
@@ -515,5 +536,88 @@ mod tests {
         assert!(parse_duration("7m-30s").is_err());
         assert!(parse_duration("1x").is_err());
         assert!(parse_duration("m10").is_err());
+    }
+
+    #[test]
+    fn set_mode_if_inactive_does_not_restart_same_mode() {
+        let mut app = App::default();
+        app.set_mode(Mode::Timer {
+            durations: vec![Duration::minutes(1)],
+            titles: vec![],
+            repeat: false,
+            no_millis: false,
+            paused: false,
+            continue_mode: None,
+            auto_quit: false,
+            execute: vec![],
+        });
+
+        app.set_mode_if_inactive(Mode::Timer {
+            durations: vec![Duration::minutes(5)],
+            titles: vec![],
+            repeat: false,
+            no_millis: false,
+            paused: false,
+            continue_mode: None,
+            auto_quit: false,
+            execute: vec![],
+        });
+
+        match app.mode {
+            Some(Mode::Timer { durations, .. }) => {
+                assert_eq!(durations, vec![Duration::minutes(1)]);
+            }
+            _ => panic!("expected timer mode"),
+        }
+    }
+
+    #[test]
+    fn mode_switching_keeps_only_one_active_widget() {
+        let mut app = App::default();
+        let clock_mode = Mode::Clock {
+            timezone: None,
+            no_date: false,
+            no_seconds: false,
+            millis: false,
+        };
+
+        app.set_mode(clock_mode);
+        assert!(app.is_mode_active(&Mode::Clock {
+            timezone: None,
+            no_date: false,
+            no_seconds: false,
+            millis: false,
+        }));
+
+        app.set_mode(Mode::Stopwatch);
+        assert!(app.is_mode_active(&Mode::Stopwatch));
+        assert!(!app.is_mode_active(&Mode::Clock {
+            timezone: None,
+            no_date: false,
+            no_seconds: false,
+            millis: false,
+        }));
+
+        app.set_mode(Mode::Timer {
+            durations: vec![Duration::minutes(1)],
+            titles: vec![],
+            repeat: false,
+            no_millis: false,
+            paused: false,
+            continue_mode: None,
+            auto_quit: false,
+            execute: vec![],
+        });
+        assert!(app.is_mode_active(&Mode::Timer {
+            durations: vec![Duration::minutes(10)],
+            titles: vec![],
+            repeat: false,
+            no_millis: false,
+            paused: false,
+            continue_mode: None,
+            auto_quit: false,
+            execute: vec![],
+        }));
+        assert!(!app.is_mode_active(&Mode::Stopwatch));
     }
 }

@@ -1,11 +1,12 @@
 use std::error::Error;
 use std::io::{self, Write};
-use std::time::Duration;
+use std::time::Duration as StdDuration;
 
+use chrono::Duration as ChronoDuration;
 use clap::Parser;
 use clock_tui::app::App;
 use clock_tui::app::Mode;
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
@@ -33,28 +34,44 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         terminal.draw(|f| app.ui(f))?;
 
-        if event::poll(Duration::from_millis(250))? {
+        if event::poll(StdDuration::from_millis(250))? {
             if let Event::Key(key) = event::read()? {
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && matches!(key.code, KeyCode::Char('c'))
+                {
+                    break;
+                }
+
+                if !key.modifiers.is_empty() {
+                    continue;
+                }
+
                 match key.code {
                     KeyCode::Char('q') => break,
                     KeyCode::Char(' ') => app.on_key(KeyCode::Char(' ')),
-                    KeyCode::Char('c') => app.set_mode(Mode::Clock {
-                        timezone: None,
-                        no_date: false,
-                        no_seconds: false,
-                        millis: false,
-                    }),
-                    KeyCode::Char('w') => app.set_mode(Mode::Stopwatch),
-                    KeyCode::Char('t') => app.set_mode(Mode::Timer {
-                        durations: vec![],
-                        titles: vec![],
-                        repeat: false,
-                        no_millis: false,
-                        paused: false,
-                        continue_mode: None,
-                        auto_quit: false,
-                        execute: vec![],
-                    }),
+                    KeyCode::Char('c') => {
+                        app.set_mode_if_inactive(Mode::Clock {
+                            timezone: None,
+                            no_date: false,
+                            no_seconds: false,
+                            millis: false,
+                        });
+                    }
+                    KeyCode::Char('w') => {
+                        app.set_mode_if_inactive(Mode::Stopwatch);
+                    }
+                    KeyCode::Char('t') => {
+                        app.set_mode_if_inactive(Mode::Timer {
+                            durations: vec![ChronoDuration::minutes(5)],
+                            titles: vec![],
+                            repeat: false,
+                            no_millis: false,
+                            paused: false,
+                            continue_mode: None,
+                            auto_quit: false,
+                            execute: vec![],
+                        });
+                    }
                     _ => {}
                 }
             }
