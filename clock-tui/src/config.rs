@@ -61,6 +61,13 @@ pub struct TimerConfig {
     #[serde(default)]
     pub start_paused: bool,
     #[serde(default)]
+    pub continue_mode: Option<String>,
+    // Backward-compatible flags. Prefer `continue_mode`.
+    #[serde(default)]
+    pub continue_on_zero: bool,
+    #[serde(default)]
+    pub continue_text: bool,
+    #[serde(default)]
     pub auto_quit: bool,
     #[serde(default)]
     pub execute: Vec<String>,
@@ -112,6 +119,9 @@ impl Default for TimerConfig {
             repeat: false,
             show_millis: default_true(),
             start_paused: false,
+            continue_mode: None,
+            continue_on_zero: false,
+            continue_text: false,
             auto_quit: false,
             execute: Vec::new(),
         }

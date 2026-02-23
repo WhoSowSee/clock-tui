@@ -66,6 +66,29 @@ The option `-d` or `--duration` to set time, for example `100s`, `5m`, `1h`, etc
 
 You can press `Space` key to _pause_ and _resume_ the timer.
 
+By default, the timer stops at `00:00` when it reaches zero.
+Use `--continue <MODE>` if you want it to keep counting elapsed time after zero.
+Modes:
+- `blink` (default clock-up alert style): time display blinks.
+- `text`: time display stays stable and a footer text is shown.
+
+```shell
+# Continue counting after zero with blinking time display
+$ tclock timer -d 10s --continue blink
+```
+
+Use text mode:
+
+```shell
+$ tclock timer -d 10s --continue text
+```
+
+Use `-Q` / `--quit` to exit automatically when the timer reaches zero.
+
+```shell
+$ tclock timer -d 10s --quit
+```
+
 The timer mode also accept additional command to run when the timer ends, for example:
 
 ```

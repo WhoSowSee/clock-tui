@@ -51,6 +51,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         repeat: false,
                         no_millis: false,
                         paused: false,
+                        continue_mode: None,
                         auto_quit: false,
                         execute: vec![],
                     }),

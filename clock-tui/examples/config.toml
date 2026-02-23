@@ -33,6 +33,9 @@ repeat = false
 show_millis = true
 # Whether to start in paused state
 start_paused = false
+# Continue behavior after reaching zero: "blink" or "text"
+# Leave unset to stop at 00:00.
+# continue_mode = "blink"
 # Whether to auto quit after timer ends
 auto_quit = false
 # Commands to execute when timer ends

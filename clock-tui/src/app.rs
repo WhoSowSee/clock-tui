@@ -23,6 +23,12 @@ use self::modes::Timer;
 
 pub mod modes;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum TimerContinueMode {
+    Blink,
+    Text,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Mode {
     /// The clock mode displays the current time, the default mode.
@@ -63,6 +69,10 @@ pub enum Mode {
         #[clap(long = "paused", short = 'P', action)]
         paused: bool,
 
+        /// Continue counting up after reaching zero
+        #[clap(long = "continue", short = 'C', value_name = "MODE", value_enum)]
+        continue_mode: Option<TimerContinueMode>,
+
         /// Auto quit when time is up
         #[clap(long = "quit", short = 'Q', action)]
         auto_quit: bool,
@@ -97,7 +107,7 @@ pub enum Mode {
     },
 }
 
-use crate::config::Config;
+use crate::config::{Config, TimerConfig};
 
 #[derive(clap::Parser, Default)]
 #[clap(name = "tclock", about = "A clock app in terminal", long_about = None)]
@@ -152,6 +162,7 @@ impl App {
                         repeat: timer_config.map(|c| c.repeat).unwrap_or(false),
                         no_millis: !timer_config.map(|c| c.show_millis).unwrap_or(true),
                         paused: timer_config.map(|c| c.start_paused).unwrap_or(false),
+                        continue_mode: timer_config.and_then(timer_continue_mode_from_config),
                         auto_quit: timer_config.map(|c| c.auto_quit).unwrap_or(false),
                         execute: timer_config.map(|c| c.execute.clone()).unwrap_or_default(),
                     }
@@ -226,10 +237,13 @@ impl App {
                 repeat,
                 no_millis,
                 paused,
+                continue_mode,
                 auto_quit,
                 execute,
             } => {
                 let timer_config = config.as_ref().map(|c| &c.timer);
+                let config_continue_mode = timer_config.and_then(timer_continue_mode_from_config);
+                let continue_mode = (*continue_mode).or(config_continue_mode);
                 let format = if *no_millis {
                     DurationFormat::HourMinSec
                 } else {
@@ -244,6 +258,7 @@ impl App {
                     format,
                     *paused || timer_config.map(|c| c.start_paused).unwrap_or(false),
                     *auto_quit || timer_config.map(|c| c.auto_quit).unwrap_or(false),
+                    continue_mode,
                     execute.to_owned(),
                 ));
             }
@@ -317,6 +332,36 @@ fn handle_key<T: Pause>(widget: &mut T, key: KeyCode) {
     if let KeyCode::Char(' ') = key {
         widget.toggle_paused()
     }
+}
+
+fn parse_timer_continue_mode_str(s: &str) -> Option<TimerContinueMode> {
+    match s.to_ascii_lowercase().as_str() {
+        "blink" => Some(TimerContinueMode::Blink),
+        "text" => Some(TimerContinueMode::Text),
+        _ => None,
+    }
+}
+
+fn timer_continue_mode_from_config(timer: &TimerConfig) -> Option<TimerContinueMode> {
+    if let Some(mode) = timer.continue_mode.as_deref() {
+        if let Some(parsed) = parse_timer_continue_mode_str(mode) {
+            return Some(parsed);
+        }
+        eprintln!(
+            "Invalid timer.continue_mode '{}' in config, expected 'blink' or 'text'",
+            mode
+        );
+    }
+
+    if timer.continue_on_zero {
+        return Some(if timer.continue_text {
+            TimerContinueMode::Text
+        } else {
+            TimerContinueMode::Blink
+        });
+    }
+
+    None
 }
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
