@@ -110,7 +110,12 @@ pub enum Mode {
 use crate::config::{Config, TimerConfig};
 
 #[derive(clap::Parser, Default)]
-#[clap(name = "tclock", about = "A clock app in terminal", long_about = None)]
+#[clap(
+    name = "tclock",
+    version,
+    about = "A clock app in terminal",
+    long_about = None
+)]
 pub struct App {
     #[clap(subcommand)]
     pub mode: Option<Mode>,
