@@ -62,7 +62,7 @@ For more details, run `tclock clock -h` to show usage.
 $ tclock timer -d 5m
 ```
 
-The option `-d` or `--duration` to set time, for example `100s`, `5m`, `1h`, etc.
+The option `-d` or `--duration` to set time, for example `100s`, `5m`, `1h`, `7m30s`, `3h52m12s`, etc.
 
 You can press `Space` key to _pause_ and _resume_ the timer.
 

@@ -48,7 +48,7 @@ pub enum Mode {
     },
     /// The timer mode displays the remaining time until the timer is finished.
     Timer {
-        /// Initial duration for timer, value can be 10s for 10 seconds, 1m for 1 minute, etc.
+        /// Initial duration for timer, value can be 10s, 1m, 7m30s, 3h52m12s, etc.
         /// Also accept mulitple duration value and run the timers sequentially, eg. 25m 5m
         #[clap(short, long="duration", value_parser = parse_duration, num_args = 1.., default_value = "5m")]
         durations: Vec<Duration>,
@@ -365,20 +365,44 @@ fn timer_continue_mode_from_config(timer: &TimerConfig) -> Option<TimerContinueM
 }
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
-    let reg = Regex::new(r"^(\d+)([smhdSMHD])$").unwrap();
-    let cap = reg
-        .captures(s)
-        .ok_or_else(|| format!("{} is not a valid duration", s))?;
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("Duration is empty".to_string());
+    }
 
-    let num = cap.get(1).unwrap().as_str().parse::<i64>().unwrap();
-    let unit = cap.get(2).unwrap().as_str().to_lowercase();
+    let reg = Regex::new(r"(?i)(\d+)([smhd])").unwrap();
+    let mut total = Duration::zero();
+    let mut consumed = 0usize;
 
-    match unit.as_str() {
-        "s" => Ok(Duration::seconds(num)),
-        "m" => Ok(Duration::minutes(num)),
-        "h" => Ok(Duration::hours(num)),
-        "d" => Ok(Duration::days(num)),
-        _ => Err(format!("Invalid duration: {}", s)),
+    for cap in reg.captures_iter(s) {
+        let m = cap.get(0).unwrap();
+        if m.start() != consumed {
+            return Err(format!("{} is not a valid duration", s));
+        }
+        consumed = m.end();
+
+        let num = cap
+            .get(1)
+            .unwrap()
+            .as_str()
+            .parse::<i64>()
+            .map_err(|_| format!("Invalid number in duration: {}", s))?;
+        let unit = cap.get(2).unwrap().as_str().to_ascii_lowercase();
+
+        let part = match unit.as_str() {
+            "s" => Duration::seconds(num),
+            "m" => Duration::minutes(num),
+            "h" => Duration::hours(num),
+            "d" => Duration::days(num),
+            _ => return Err(format!("Invalid duration: {}", s)),
+        };
+        total = total + part;
+    }
+
+    if consumed == s.len() && consumed > 0 {
+        Ok(total)
+    } else {
+        Err(format!("{} is not a valid duration", s))
     }
 }
 
@@ -452,4 +476,44 @@ fn parse_datetime(s: &str) -> Result<DateTime<Local>, String> {
 
 fn parse_timezone(s: &str) -> Result<Tz, String> {
     s.parse()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_duration;
+    use chrono::Duration;
+
+    #[test]
+    fn parse_duration_supports_single_unit() {
+        assert_eq!(parse_duration("450s").unwrap(), Duration::seconds(450));
+        assert_eq!(parse_duration("5m").unwrap(), Duration::minutes(5));
+    }
+
+    #[test]
+    fn parse_duration_supports_combined_units() {
+        assert_eq!(
+            parse_duration("7m30s").unwrap(),
+            Duration::minutes(7) + Duration::seconds(30)
+        );
+        assert_eq!(
+            parse_duration("3h52m12s").unwrap(),
+            Duration::hours(3) + Duration::minutes(52) + Duration::seconds(12)
+        );
+    }
+
+    #[test]
+    fn parse_duration_supports_uppercase_units() {
+        assert_eq!(
+            parse_duration("1H2M3S").unwrap(),
+            Duration::hours(1) + Duration::minutes(2) + Duration::seconds(3)
+        );
+    }
+
+    #[test]
+    fn parse_duration_rejects_invalid_values() {
+        assert!(parse_duration("450").is_err());
+        assert!(parse_duration("7m-30s").is_err());
+        assert!(parse_duration("1x").is_err());
+        assert!(parse_duration("m10").is_err());
+    }
 }
