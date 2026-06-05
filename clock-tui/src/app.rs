@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use chrono::DateTime;
 use chrono::Duration;
 use chrono::Local;
@@ -22,6 +24,44 @@ use self::modes::Stopwatch;
 use self::modes::Timer;
 
 pub mod modes;
+
+const AUDIO_EXTENSIONS: &[&str] = &[
+    "mp3", "wav", "ogg", "flac", "aac", "m4a", "wma", "opus",
+    "aiff", "aif", "alac", "ape", "mid", "midi", "ac3", "dts",
+    "pcm", "raw", "dsf",
+];
+
+const VIDEO_EXTENSIONS: &[&str] = &[
+    "mp4", "mkv", "webm", "avi", "mov", "wmv", "m4v",
+    "mpg", "mpeg", "ts", "flv", "3gp", "ogv",
+];
+
+pub fn validate_sound_path(path: &str) -> Result<(), String> {
+    if !Path::new(path).exists() {
+        return Err(format!("File not found: {}", path));
+    }
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if ext.is_empty() {
+        return Err(format!(
+            "File has no extension. Only audio ({}) and video ({}) files are accepted.",
+            AUDIO_EXTENSIONS.join(", "),
+            VIDEO_EXTENSIONS.join(", "),
+        ));
+    }
+    if AUDIO_EXTENSIONS.contains(&ext.as_str()) || VIDEO_EXTENSIONS.contains(&ext.as_str()) {
+        return Ok(());
+    }
+    Err(format!(
+        "Unsupported format '.{}'. Only audio ({}) and video ({}) files are accepted.",
+        ext,
+        AUDIO_EXTENSIONS.join(", "),
+        VIDEO_EXTENSIONS.join(", "),
+    ))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum TimerContinueMode {
@@ -80,6 +120,12 @@ pub enum Mode {
         /// Command to run when the timer ends
         #[clap(long, short, num_args = 1.., allow_hyphen_values = true)]
         execute: Vec<String>,
+
+        #[clap(short = 'b', long, action)]
+        bell: bool,
+
+        #[clap(short = 'S', long, value_name = "FILE")]
+        sound: Option<String>,
     },
     /// The stopwatch mode displays the elapsed time since it was started.
     Stopwatch,
@@ -97,13 +143,18 @@ pub enum Mode {
         #[clap(long = "continue", short = 'c', action)]
         continue_on_zero: bool,
 
-        /// Reverse the countdown, a.k.a. countup
         #[clap(long, short, action)]
         reverse: bool,
 
         /// Show milliseconds
         #[clap(short, long, action)]
         millis: bool,
+
+        #[clap(short = 'b', long, action)]
+        bell: bool,
+
+        #[clap(short = 'S', long, value_name = "FILE")]
+        sound: Option<String>,
     },
 }
 
@@ -139,6 +190,45 @@ pub struct App {
 }
 
 impl App {
+    pub fn validate_sound_on_error_exit(&self) {
+        let cli_sound = match self.mode {
+            Some(Mode::Timer { sound: Some(ref path), .. }) => Some(path),
+            Some(Mode::Countdown { sound: Some(ref path), .. }) => Some(path),
+            _ => None,
+        };
+        if let Some(path) = cli_sound {
+            if let Err(e) = validate_sound_path(path) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return;
+        }
+        let is_timer_without_sound = matches!(self.mode, Some(Mode::Timer { sound: None, .. }));
+        let is_countdown_without_sound = matches!(self.mode, Some(Mode::Countdown { sound: None, .. }));
+        if self.mode.is_none() || is_timer_without_sound || is_countdown_without_sound {
+            if let Some(ref config) = Config::load() {
+                let timer_active = is_timer_without_sound
+                    || (self.mode.is_none() && config.default.mode.as_str() == "timer");
+                if timer_active {
+                    if let Some(ref path) = config.timer.sound {
+                        if let Err(e) = validate_sound_path(path) {
+                            eprintln!("Error (config): {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                if is_countdown_without_sound {
+                    if let Some(ref path) = config.countdown.sound {
+                        if let Err(e) = validate_sound_path(path) {
+                            eprintln!("Error (config): {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn set_mode(&mut self, mode: Mode) {
         self.mode = Some(mode);
         self.init_app();
@@ -191,6 +281,8 @@ impl App {
                         continue_mode: timer_config.and_then(timer_continue_mode_from_config),
                         auto_quit: timer_config.map(|c| c.auto_quit).unwrap_or(false),
                         execute: timer_config.map(|c| c.execute.clone()).unwrap_or_default(),
+                        bell: timer_config.map(|c| c.bell).unwrap_or(false),
+                        sound: timer_config.and_then(|c| c.sound.clone()),
                     }
                 }
                 "stopwatch" => Mode::Stopwatch,
@@ -200,13 +292,15 @@ impl App {
                         time: countdown_config
                             .and_then(|c| c.time.as_ref())
                             .and_then(|t| parse_datetime(t).ok())
-                            .unwrap_or_else(|| Local::now()),
+                            .unwrap_or_else(Local::now),
                         title: countdown_config.map(|c| c.title.clone()).unwrap_or(None),
                         continue_on_zero: countdown_config
                             .map(|c| c.continue_on_zero)
                             .unwrap_or(false),
                         reverse: countdown_config.map(|c| c.reverse).unwrap_or(false),
                         millis: countdown_config.map(|c| c.show_millis).unwrap_or(false),
+                        bell: countdown_config.map(|c| c.bell).unwrap_or(false),
+                        sound: countdown_config.and_then(|c| c.sound.clone()),
                     }
                 }
                 _ => {
@@ -266,6 +360,8 @@ impl App {
                 continue_mode,
                 auto_quit,
                 execute,
+                bell,
+                sound,
             } => {
                 let timer_config = config.as_ref().map(|c| &c.timer);
                 let config_continue_mode = timer_config.and_then(timer_continue_mode_from_config);
@@ -275,6 +371,10 @@ impl App {
                 } else {
                     DurationFormat::HourMinSecDeci
                 };
+                let bell = *bell || timer_config.map(|c| c.bell).unwrap_or(false);
+                let sound = sound
+                    .clone()
+                    .or_else(|| timer_config.and_then(|c| c.sound.clone()));
                 self.timer = Some(Timer::new(
                     size,
                     style,
@@ -286,6 +386,8 @@ impl App {
                     *auto_quit || timer_config.map(|c| c.auto_quit).unwrap_or(false),
                     continue_mode,
                     execute.to_owned(),
+                    bell,
+                    sound,
                 ));
             }
             Mode::Stopwatch => {
@@ -297,24 +399,32 @@ impl App {
                 continue_on_zero,
                 reverse,
                 millis,
+                bell,
+                sound,
             } => {
                 let countdown_config = config.as_ref().map(|c| &c.countdown);
-                self.countdown = Some(Countdown {
+                let bell = *bell || countdown_config.map(|c| c.bell).unwrap_or(false);
+                let sound = sound
+                    .clone()
+                    .or_else(|| countdown_config.and_then(|c| c.sound.clone()));
+                self.countdown = Some(Countdown::new(
                     size,
                     style,
-                    time: *time,
-                    title: title.to_owned(),
-                    continue_on_zero: *continue_on_zero
+                    *time,
+                    title.to_owned(),
+                    *continue_on_zero
                         || countdown_config
                             .map(|c| c.continue_on_zero)
                             .unwrap_or(false),
-                    reverse: *reverse || countdown_config.map(|c| c.reverse).unwrap_or(false),
-                    format: if *millis || countdown_config.map(|c| c.show_millis).unwrap_or(false) {
+                    *reverse || countdown_config.map(|c| c.reverse).unwrap_or(false),
+                    if *millis || countdown_config.map(|c| c.show_millis).unwrap_or(false) {
                         DurationFormat::HourMinSecDeci
                     } else {
                         DurationFormat::HourMinSec
                     },
-                })
+                    bell,
+                    sound,
+                ));
             }
         }
     }
@@ -422,7 +532,7 @@ fn parse_duration(s: &str) -> Result<Duration, String> {
             "d" => Duration::days(num),
             _ => return Err(format!("Invalid duration: {}", s)),
         };
-        total = total + part;
+        total += part;
     }
 
     if consumed == s.len() && consumed > 0 {
@@ -506,7 +616,7 @@ fn parse_timezone(s: &str) -> Result<Tz, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_duration, App, Mode};
+    use super::{parse_duration, validate_sound_path, App, Mode};
     use chrono::Duration;
 
     #[test]
@@ -555,6 +665,8 @@ mod tests {
             continue_mode: None,
             auto_quit: false,
             execute: vec![],
+            bell: false,
+            sound: None,
         });
 
         app.set_mode_if_inactive(Mode::Timer {
@@ -566,6 +678,8 @@ mod tests {
             continue_mode: None,
             auto_quit: false,
             execute: vec![],
+            bell: false,
+            sound: None,
         });
 
         match app.mode {
@@ -612,6 +726,8 @@ mod tests {
             continue_mode: None,
             auto_quit: false,
             execute: vec![],
+            bell: false,
+            sound: None,
         });
         assert!(app.is_mode_active(&Mode::Timer {
             durations: vec![Duration::minutes(10)],
@@ -622,7 +738,58 @@ mod tests {
             continue_mode: None,
             auto_quit: false,
             execute: vec![],
+            bell: false,
+            sound: None,
         }));
         assert!(!app.is_mode_active(&Mode::Stopwatch));
+    }
+
+    #[test]
+    fn validate_rejects_missing_file() {
+        let err = validate_sound_path("/nonexistent/path/ding.mp3").unwrap_err();
+        assert!(err.contains("File not found"));
+    }
+
+    #[test]
+    fn validate_rejects_unsupported_extension() {
+        let dir = std::env::temp_dir().join("tclock_test_validate");
+        let _ = std::fs::create_dir_all(&dir);
+        let file_path = dir.join("test.txt");
+        std::fs::write(&file_path, b"hello").unwrap();
+        let err = validate_sound_path(file_path.to_str().unwrap()).unwrap_err();
+        assert!(err.contains("Unsupported format"));
+        assert!(err.contains(".txt"));
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn validate_accepts_audio_extension() {
+        let dir = std::env::temp_dir().join("tclock_test_validate");
+        let _ = std::fs::create_dir_all(&dir);
+        let file_path = dir.join("test.mp3");
+        std::fs::write(&file_path, b"").unwrap();
+        assert!(validate_sound_path(file_path.to_str().unwrap()).is_ok());
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn validate_accepts_video_extension() {
+        let dir = std::env::temp_dir().join("tclock_test_validate");
+        let _ = std::fs::create_dir_all(&dir);
+        let file_path = dir.join("test.mp4");
+        std::fs::write(&file_path, b"").unwrap();
+        assert!(validate_sound_path(file_path.to_str().unwrap()).is_ok());
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn validate_rejects_no_extension() {
+        let dir = std::env::temp_dir().join("tclock_test_validate");
+        let _ = std::fs::create_dir_all(&dir);
+        let file_path = dir.join("testfile");
+        std::fs::write(&file_path, b"").unwrap();
+        let err = validate_sound_path(file_path.to_str().unwrap()).unwrap_err();
+        assert!(err.contains("no extension"));
+        let _ = std::fs::remove_file(&file_path);
     }
 }

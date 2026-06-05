@@ -7,7 +7,7 @@ use crate::clock_text::ClockText;
 use chrono::{DateTime, Duration, Local};
 use ratatui::{buffer::Buffer, layout::Rect, style::Style, widgets::Widget};
 
-use super::{format_duration, render_centered, DurationFormat};
+use super::{format_duration, play_beep_tone, play_sound, render_centered, DurationFormat};
 
 pub struct Timer {
     pub size: u16,
@@ -16,12 +16,16 @@ pub struct Timer {
     pub durations: Vec<Duration>,
     pub titles: Vec<String>,
     pub execute: Vec<String>,
+    pub bell: bool,
+    pub sound: Option<String>,
     continue_mode: Option<TimerContinueMode>,
     auto_quit: bool,
     format: DurationFormat,
     passed: Duration,
     started_at: Option<DateTime<Local>>,
     execute_result: RefCell<Option<String>>,
+    last_bell_at: RefCell<Option<DateTime<Local>>>,
+    sound_fired: RefCell<bool>,
 }
 
 impl Timer {
@@ -37,6 +41,8 @@ impl Timer {
         auto_quit: bool,
         continue_mode: Option<TimerContinueMode>,
         execute: Vec<String>,
+        bell: bool,
+        sound: Option<String>,
     ) -> Self {
         Self {
             size,
@@ -45,12 +51,16 @@ impl Timer {
             titles,
             repeat,
             execute,
+            bell,
+            sound,
             continue_mode,
             auto_quit,
             format,
             passed: Duration::zero(),
             started_at: (!paused).then(Local::now),
             execute_result: RefCell::new(None),
+            last_bell_at: RefCell::new(None),
+            sound_fired: RefCell::new(false),
         }
     }
 
@@ -76,17 +86,41 @@ impl Timer {
                 break;
             }
             idx = (idx + 1) % self.durations.len();
-            next_checkpoint = next_checkpoint + self.durations[idx];
+            next_checkpoint += self.durations[idx];
         }
 
         (next_checkpoint - total_passed, idx)
     }
 
     fn ensure_completion_handled(&self, remaining_time: Duration) {
-        if remaining_time > Duration::zero() || self.execute_result.borrow().is_some() {
+        if remaining_time > Duration::zero() {
             return;
         }
 
+        if self.bell {
+            let now = Local::now();
+            let should_ring = match *self.last_bell_at.borrow() {
+                None => true,
+                Some(last) => (now - last) >= Duration::milliseconds(1000),
+            };
+            if should_ring {
+                *self.last_bell_at.borrow_mut() = Some(now);
+                let _ = std::io::Write::write(&mut std::io::stdout(), b"\x07");
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+                play_beep_tone();
+            }
+        }
+
+        if !*self.sound_fired.borrow() {
+            *self.sound_fired.borrow_mut() = true;
+            if let Some(ref path) = self.sound {
+                play_sound(path);
+            }
+        }
+
+        if self.execute_result.borrow().is_some() {
+            return;
+        }
         if self.execute.is_empty() {
             *self.execute_result.borrow_mut() = Some(String::new());
             return;
@@ -171,11 +205,12 @@ impl Timer {
 }
 
 fn execute(execute: &[String]) -> String {
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c");
     let cmd_str = execute.join(" ");
-    cmd.arg(cmd_str);
-    let output = cmd.output();
+    let output = if cfg!(target_os = "windows") {
+        Command::new("cmd").args(["/C", &cmd_str]).output()
+    } else {
+        Command::new("sh").args(["-c", &cmd_str]).output()
+    };
     match output {
         Ok(output) => {
             if !output.status.success() {
@@ -227,7 +262,7 @@ impl Pause for Timer {
 
     fn pause(&mut self) {
         if let Some(started_at) = self.started_at {
-            self.passed = self.passed + (Local::now() - started_at);
+            self.passed += Local::now() - started_at;
             self.started_at = None;
         }
     }
@@ -258,6 +293,8 @@ mod tests {
             auto_quit,
             continue_mode,
             vec![],
+            false,
+            None,
         )
     }
 
@@ -306,6 +343,8 @@ mod tests {
             false,
             None,
             vec![],
+            false,
+            None,
         );
 
         assert_eq!(timer.remaining_time(), (Duration::zero(), 0));

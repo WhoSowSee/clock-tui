@@ -60,7 +60,7 @@ impl Pause for Stopwatch {
     fn pause(&mut self) {
         if let Some(start_at) = self.started_at {
             let now = Local::now();
-            self.duration = self.duration + now.signed_duration_since(start_at);
+            self.duration += now.signed_duration_since(start_at);
             self.started_at = None;
         }
     }

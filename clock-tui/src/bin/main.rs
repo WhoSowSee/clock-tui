@@ -4,8 +4,7 @@ use std::time::Duration as StdDuration;
 
 use chrono::Duration as ChronoDuration;
 use clap::Parser;
-use clock_tui::app::App;
-use clock_tui::app::Mode;
+use clock_tui::app::{App, Mode};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
@@ -17,6 +16,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Parse command line arguments
     // Must be done first so `--help` isn't printed to the alternate screen.
     let mut app = App::parse();
+
+    app.validate_sound_on_error_exit();
 
     // Setup terminal
     enable_raw_mode()?;
@@ -70,6 +71,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                             continue_mode: None,
                             auto_quit: false,
                             execute: vec![],
+                            bell: false,
+                            sound: None,
                         });
                     }
                     _ => {}

@@ -71,12 +71,16 @@ pub struct TimerConfig {
     pub auto_quit: bool,
     #[serde(default)]
     pub execute: Vec<String>,
+    #[serde(default)]
+    pub bell: bool,
+    #[serde(default)]
+    pub sound: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct StopwatchConfig {}
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct CountdownConfig {
     #[serde(default)]
     pub time: Option<String>,
@@ -88,6 +92,10 @@ pub struct CountdownConfig {
     pub continue_on_zero: bool,
     #[serde(default)]
     pub reverse: bool,
+    #[serde(default)]
+    pub bell: bool,
+    #[serde(default)]
+    pub sound: Option<String>,
 }
 
 impl Default for DefaultConfig {
@@ -124,24 +132,8 @@ impl Default for TimerConfig {
             continue_text: false,
             auto_quit: false,
             execute: Vec::new(),
-        }
-    }
-}
-
-impl Default for StopwatchConfig {
-    fn default() -> Self {
-        Self {}
-    }
-}
-
-impl Default for CountdownConfig {
-    fn default() -> Self {
-        Self {
-            time: None,
-            title: None,
-            show_millis: false,
-            continue_on_zero: false,
-            reverse: false,
+            bell: false,
+            sound: None,
         }
     }
 }
