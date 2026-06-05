@@ -132,10 +132,10 @@ impl Timer {
 
     fn display_time(&self, remaining_time: Duration) -> Duration {
         if remaining_time <= Duration::zero() {
-            if self.continue_mode.is_some() {
-                -remaining_time
-            } else {
-                Duration::zero()
+            match self.continue_mode {
+                Some(TimerContinueMode::Minus) => remaining_time,
+                Some(_) => -remaining_time,
+                None => Duration::zero(),
             }
         } else {
             remaining_time

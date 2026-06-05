@@ -67,6 +67,7 @@ pub fn validate_sound_path(path: &str) -> Result<(), String> {
 pub enum TimerContinueMode {
     Blink,
     Text,
+    Minus,
 }
 
 #[derive(Debug, Subcommand)]
@@ -472,6 +473,7 @@ fn parse_timer_continue_mode_str(s: &str) -> Option<TimerContinueMode> {
     match s.to_ascii_lowercase().as_str() {
         "blink" => Some(TimerContinueMode::Blink),
         "text" => Some(TimerContinueMode::Text),
+        "minus" => Some(TimerContinueMode::Minus),
         _ => None,
     }
 }
