@@ -139,9 +139,9 @@ pub enum Mode {
         #[clap(long, short = 'T')]
         title: Option<String>,
 
-        /// Continue to countdown after pass the target time
-        #[clap(long = "continue", short = 'c', action)]
-        continue_on_zero: bool,
+        /// Continue counting after reaching target time
+        #[clap(long = "continue", short = 'C', value_name = "MODE", value_enum)]
+        continue_mode: Option<TimerContinueMode>,
 
         #[clap(long, short, action)]
         reverse: bool,
@@ -158,7 +158,7 @@ pub enum Mode {
     },
 }
 
-use crate::config::{Config, TimerConfig};
+use crate::config::{Config, CountdownConfig, TimerConfig};
 
 #[derive(clap::Parser, Default)]
 #[clap(
@@ -294,9 +294,7 @@ impl App {
                             .and_then(|t| parse_datetime(t).ok())
                             .unwrap_or_else(Local::now),
                         title: countdown_config.map(|c| c.title.clone()).unwrap_or(None),
-                        continue_on_zero: countdown_config
-                            .map(|c| c.continue_on_zero)
-                            .unwrap_or(false),
+                        continue_mode: countdown_config.and_then(countdown_continue_mode_from_config),
                         reverse: countdown_config.map(|c| c.reverse).unwrap_or(false),
                         millis: countdown_config.map(|c| c.show_millis).unwrap_or(false),
                         bell: countdown_config.map(|c| c.bell).unwrap_or(false),
@@ -396,13 +394,16 @@ impl App {
             Mode::Countdown {
                 time,
                 title,
-                continue_on_zero,
+                continue_mode,
                 reverse,
                 millis,
                 bell,
                 sound,
             } => {
                 let countdown_config = config.as_ref().map(|c| &c.countdown);
+                let config_continue_mode =
+                    countdown_config.and_then(countdown_continue_mode_from_config);
+                let continue_mode = (*continue_mode).or(config_continue_mode);
                 let bell = *bell || countdown_config.map(|c| c.bell).unwrap_or(false);
                 let sound = sound
                     .clone()
@@ -412,10 +413,7 @@ impl App {
                     style,
                     *time,
                     title.to_owned(),
-                    *continue_on_zero
-                        || countdown_config
-                            .map(|c| c.continue_on_zero)
-                            .unwrap_or(false),
+                    continue_mode,
                     *reverse || countdown_config.map(|c| c.reverse).unwrap_or(false),
                     if *millis || countdown_config.map(|c| c.show_millis).unwrap_or(false) {
                         DurationFormat::HourMinSecDeci
@@ -491,6 +489,28 @@ fn timer_continue_mode_from_config(timer: &TimerConfig) -> Option<TimerContinueM
 
     if timer.continue_on_zero {
         return Some(if timer.continue_text {
+            TimerContinueMode::Text
+        } else {
+            TimerContinueMode::Blink
+        });
+    }
+
+    None
+}
+
+fn countdown_continue_mode_from_config(countdown: &CountdownConfig) -> Option<TimerContinueMode> {
+    if let Some(mode) = countdown.continue_mode.as_deref() {
+        if let Some(parsed) = parse_timer_continue_mode_str(mode) {
+            return Some(parsed);
+        }
+        eprintln!(
+            "Invalid countdown.continue_mode '{}' in config, expected 'blink' or 'text'",
+            mode
+        );
+    }
+
+    if countdown.continue_on_zero {
+        return Some(if countdown.continue_text {
             TimerContinueMode::Text
         } else {
             TimerContinueMode::Blink

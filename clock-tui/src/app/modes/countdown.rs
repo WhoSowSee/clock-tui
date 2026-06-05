@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 
+use crate::app::TimerContinueMode;
 use crate::clock_text::font::bricks::BricksFont;
 use crate::clock_text::ClockText;
 use chrono::{DateTime, Duration, Local};
@@ -12,7 +13,7 @@ pub struct Countdown {
     pub style: Style,
     pub time: DateTime<Local>,
     pub title: Option<String>,
-    pub continue_on_zero: bool,
+    continue_mode: Option<TimerContinueMode>,
     pub(crate) reverse: bool,
     pub(crate) format: DurationFormat,
     pub bell: bool,
@@ -29,7 +30,7 @@ impl Countdown {
         style: Style,
         time: DateTime<Local>,
         title: Option<String>,
-        continue_on_zero: bool,
+        continue_mode: Option<TimerContinueMode>,
         reverse: bool,
         format: DurationFormat,
         bell: bool,
@@ -42,7 +43,7 @@ impl Countdown {
             style,
             time,
             title,
-            continue_on_zero,
+            continue_mode,
             reverse,
             format,
             bell,
@@ -66,7 +67,6 @@ impl Countdown {
             return;
         }
 
-        // Repeated bell
         if self.bell {
             let now = Local::now();
             let should_ring = match *self.last_bell_at.borrow() {
@@ -88,6 +88,36 @@ impl Countdown {
             }
         }
     }
+
+    fn is_past_target(&self, remaining_time: Duration) -> bool {
+        self.continue_mode.is_some() && remaining_time < Duration::zero()
+    }
+
+    fn is_blink_hidden_phase(&self, remaining_time: Duration) -> bool {
+        if !self.is_past_target(remaining_time)
+            || !matches!(self.continue_mode, Some(TimerContinueMode::Blink))
+        {
+            return false;
+        }
+        Local::now().timestamp_millis().rem_euclid(1000) >= 500
+    }
+
+    fn blink_time(time_str: &str) -> String {
+        time_str
+            .chars()
+            .map(|c| if c.is_whitespace() { c } else { ' ' })
+            .collect()
+    }
+
+    fn footer_text(&self, remaining_time: Duration) -> Option<String> {
+        if matches!(self.continue_mode, Some(TimerContinueMode::Text))
+            && self.is_past_target(remaining_time)
+        {
+            Some("TIME AFTER TARGET".to_string())
+        } else {
+            None
+        }
+    }
 }
 
 impl Widget for &Countdown {
@@ -99,17 +129,14 @@ impl Widget for &Countdown {
             let elapsed = self.initial_remaining - remaining_time;
             if elapsed < Duration::zero() {
                 Duration::zero()
-            } else if !self.continue_on_zero && remaining_time < Duration::zero() {
+            } else if self.continue_mode.is_none() && remaining_time < Duration::zero() {
                 self.initial_remaining
             } else {
                 elapsed
             }
-        } else if remaining_time < Duration::zero() && !self.continue_on_zero {
-            if remaining_time.num_milliseconds().abs() % 1000 < 500 {
-                let font = BricksFont::new(self.size);
-                let text = ClockText::new(String::new(), &font, self.style);
-                render_centered(area, buf, &text, self.title.to_owned(), None);
-                return;
+        } else if remaining_time < Duration::zero() {
+            if self.continue_mode.is_some() {
+                -remaining_time
             } else {
                 Duration::zero()
             }
@@ -117,9 +144,15 @@ impl Widget for &Countdown {
             remaining_time
         };
 
-        let time_str = format_duration(display_time, self.format);
+        let mut time_str = format_duration(display_time, self.format);
+        if self.is_blink_hidden_phase(remaining_time) {
+            time_str = Countdown::blink_time(&time_str);
+        }
+
         let font = BricksFont::new(self.size);
         let text = ClockText::new(time_str, &font, self.style);
-        render_centered(area, buf, &text, self.title.to_owned(), None);
+
+        let footer = self.footer_text(remaining_time);
+        render_centered(area, buf, &text, self.title.to_owned(), footer);
     }
 }

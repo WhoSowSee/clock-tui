@@ -89,7 +89,11 @@ pub struct CountdownConfig {
     #[serde(default)]
     pub show_millis: bool,
     #[serde(default)]
+    pub continue_mode: Option<String>,
+    #[serde(default)]
     pub continue_on_zero: bool,
+    #[serde(default)]
+    pub continue_text: bool,
     #[serde(default)]
     pub reverse: bool,
     #[serde(default)]
