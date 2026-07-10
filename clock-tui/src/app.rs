@@ -23,7 +23,9 @@ use self::modes::Pause;
 use self::modes::Stopwatch;
 use self::modes::Timer;
 
+pub mod keymap;
 pub mod modes;
+
 
 const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "wav", "ogg", "flac", "aac", "m4a", "wma", "opus",
@@ -441,7 +443,13 @@ impl App {
     }
 
     pub fn on_key(&mut self, key: KeyCode) {
-        if let Some(_w) = self.clock.as_mut() {
+        if let Some(w) = self.clock.as_mut() {
+            match key {
+                KeyCode::Char('d') => w.toggle_date(),
+                KeyCode::Char('s') => w.toggle_secs(),
+                KeyCode::Char('m') => w.toggle_millis(),
+                _ => {}
+            }
         } else if let Some(w) = self.timer.as_mut() {
             handle_key(w, key);
         } else if let Some(w) = self.stopwatch.as_mut() {
@@ -813,5 +821,41 @@ mod tests {
         let err = validate_sound_path(file_path.to_str().unwrap()).unwrap_err();
         assert!(err.contains("no extension"));
         let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn clock_toggle_keys_flip_display_flags() {
+        use crossterm::event::KeyCode;
+        let mut app = App::default();
+        app.set_mode(Mode::Clock {
+            timezone: None,
+            no_date: false,
+            no_seconds: false,
+            millis: false,
+        });
+
+        let clk = app.clock.as_ref().expect("clock should be active");
+        assert!(clk.show_date);
+        assert!(clk.show_secs);
+        assert!(!clk.show_millis);
+
+        app.on_key(KeyCode::Char('d'));
+        assert!(!app.clock.as_ref().unwrap().show_date);
+        app.on_key(KeyCode::Char('d'));
+        assert!(app.clock.as_ref().unwrap().show_date);
+
+        app.on_key(KeyCode::Char('s'));
+        assert!(!app.clock.as_ref().unwrap().show_secs);
+        app.on_key(KeyCode::Char('m'));
+        assert!(app.clock.as_ref().unwrap().show_millis);
+        assert!(app.clock.as_ref().unwrap().show_secs);
+
+        app.on_key(KeyCode::Char('s'));
+        assert!(!app.clock.as_ref().unwrap().show_secs);
+        assert!(!app.clock.as_ref().unwrap().show_millis);
+
+        app.on_key(KeyCode::Char('s'));
+        assert!(app.clock.as_ref().unwrap().show_secs);
+        assert!(!app.clock.as_ref().unwrap().show_millis);
     }
 }

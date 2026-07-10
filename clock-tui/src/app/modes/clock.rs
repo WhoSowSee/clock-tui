@@ -15,9 +15,29 @@ pub(crate) struct Clock {
     pub timezone: Option<Tz>,
 }
 
+impl Clock {
+    pub fn toggle_date(&mut self) {
+        self.show_date = !self.show_date;
+    }
+
+    pub fn toggle_secs(&mut self) {
+        if self.show_secs {
+            self.show_millis = false;
+        }
+        self.show_secs = !self.show_secs;
+    }
+
+    pub fn toggle_millis(&mut self) {
+        if !self.show_millis {
+            self.show_secs = true;
+        }
+        self.show_millis = !self.show_millis;
+    }
+}
+
 impl Widget for &Clock {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let now = if let Some(ref tz) = self.timezone {
+        let now = if let Some(tz) = &self.timezone {
             Utc::now().with_timezone(tz).naive_local()
         } else {
             Local::now().naive_local()
@@ -35,7 +55,7 @@ impl Widget for &Clock {
         let text = ClockText::new(time_str.to_string(), &font, self.style);
         let header = if self.show_date {
             let mut title = now.format("%Y-%m-%d").to_string();
-            if let Some(tz) = self.timezone {
+            if let Some(tz) = &self.timezone {
                 title.push(' ');
                 title.push_str(tz.name());
             }

@@ -55,6 +55,8 @@ $ tclock
 
 For more details, run `tclock clock -h` to show usage.
 
+In clock mode these keys toggle the display in real time: `d` toggles the date header, `s` toggles the seconds, `m` toggles the milliseconds.
+
 ## Run timer
 
 ```shell

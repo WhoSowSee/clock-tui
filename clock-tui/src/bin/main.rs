@@ -4,6 +4,7 @@ use std::time::Duration as StdDuration;
 
 use chrono::Duration as ChronoDuration;
 use clap::Parser;
+use clock_tui::app::keymap::layout_aware;
 use clock_tui::app::{App, Mode};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
@@ -11,6 +12,7 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Parse command line arguments
@@ -47,7 +49,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
-                match key.code {
+                let key = layout_aware(key.code);
+                match key {
                     KeyCode::Char('q') => break,
                     KeyCode::Char(' ') => app.on_key(KeyCode::Char(' ')),
                     KeyCode::Char('c') => {
@@ -75,6 +78,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                             sound: None,
                         });
                     }
+                    KeyCode::Char('d')
+                    | KeyCode::Char('s')
+                    | KeyCode::Char('m') => app.on_key(key),
                     _ => {}
                 }
             }
