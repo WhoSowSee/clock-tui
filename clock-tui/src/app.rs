@@ -451,7 +451,11 @@ impl App {
                 _ => {}
             }
         } else if let Some(w) = self.timer.as_mut() {
-            handle_key(w, key);
+            match key {
+                KeyCode::Char('=') | KeyCode::Char('+') => w.adjust_remaining_seconds(1),
+                KeyCode::Char('-') => w.adjust_remaining_seconds(-1),
+                _ => handle_key(w, key),
+            }
         } else if let Some(w) = self.stopwatch.as_mut() {
             handle_key(w, key);
         }
@@ -857,5 +861,32 @@ mod tests {
         app.on_key(KeyCode::Char('s'));
         assert!(app.clock.as_ref().unwrap().show_secs);
         assert!(!app.clock.as_ref().unwrap().show_millis);
+    }
+
+    #[test]
+    fn timer_adjustment_keys_change_remaining_time_by_one_second() {
+        use crossterm::event::KeyCode;
+
+        let mut app = App::default();
+        app.set_mode(Mode::Timer {
+            durations: vec![Duration::seconds(10)],
+            titles: vec![],
+            repeat: false,
+            no_millis: true,
+            paused: true,
+            continue_mode: None,
+            auto_quit: false,
+            execute: vec![],
+            bell: false,
+            sound: None,
+        });
+
+        for (key, expected_seconds) in [('=', 11), ('-', 10), ('+', 11)] {
+            app.on_key(KeyCode::Char(key));
+            assert_eq!(
+                app.timer.as_ref().unwrap().remaining_time().0,
+                Duration::seconds(expected_seconds)
+            );
+        }
     }
 }

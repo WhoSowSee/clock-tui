@@ -72,6 +72,10 @@ impl Timer {
         }
     }
 
+    pub(crate) fn adjust_remaining_seconds(&mut self, seconds: i64) {
+        self.passed -= Duration::seconds(seconds);
+    }
+
     pub(crate) fn remaining_time(&self) -> (Duration, usize) {
         if self.durations.is_empty() {
             return (Duration::zero(), 0);

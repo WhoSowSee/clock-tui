@@ -6,13 +6,18 @@ use chrono::Duration as ChronoDuration;
 use clap::Parser;
 use clock_tui::app::keymap::layout_aware;
 use clock_tui::app::{App, Mode};
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
+fn has_supported_modifiers(key: &KeyEvent) -> bool {
+    key.modifiers.is_empty()
+        || (key.modifiers == KeyModifiers::SHIFT
+            && matches!(key.code, KeyCode::Char('+') | KeyCode::Char('=')))
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Parse command line arguments
@@ -45,14 +50,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     break;
                 }
 
-                if !key.modifiers.is_empty() {
+                if !has_supported_modifiers(&key) {
                     continue;
                 }
 
                 let key = layout_aware(key.code);
                 match key {
                     KeyCode::Char('q') => break,
-                    KeyCode::Char(' ') => app.on_key(KeyCode::Char(' ')),
                     KeyCode::Char('c') => {
                         app.set_mode_if_inactive(Mode::Clock {
                             timezone: None,
@@ -78,10 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             sound: None,
                         });
                     }
-                    KeyCode::Char('d')
-                    | KeyCode::Char('s')
-                    | KeyCode::Char('m') => app.on_key(key),
-                    _ => {}
+                    _ => app.on_key(key),
                 }
             }
         }
@@ -99,4 +100,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     io::stdout().flush()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    #[test]
+    fn shifted_plus_has_supported_modifiers() {
+        for code in [KeyCode::Char('+'), KeyCode::Char('=')] {
+            let key = KeyEvent::new(code, KeyModifiers::SHIFT);
+            assert!(super::has_supported_modifiers(&key));
+        }
+
+        let control_plus = KeyEvent::new(KeyCode::Char('+'), KeyModifiers::CONTROL);
+        assert!(!super::has_supported_modifiers(&control_plus));
+    }
 }

@@ -67,6 +67,7 @@ $ tclock timer -d 5m
 The option `-d` or `--duration` to set time, for example `100s`, `5m`, `1h`, `7m30s`, `3h52m12s`, etc.
 
 You can press `Space` key to _pause_ and _resume_ the timer.
+Press `-` to subtract one second or `=` / `+` to add one second.
 
 By default, the timer stops at `00:00` when it reaches zero.
 Use `--continue <MODE>` if you want it to keep counting elapsed time after zero.
