@@ -6,18 +6,12 @@ use chrono::Duration as ChronoDuration;
 use clap::Parser;
 use clock_tui::app::keymap::layout_aware;
 use clock_tui::app::{App, Mode};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
-
-fn has_supported_modifiers(key: &KeyEvent) -> bool {
-    key.modifiers.is_empty()
-        || (key.modifiers == KeyModifiers::SHIFT
-            && matches!(key.code, KeyCode::Char('+') | KeyCode::Char('=')))
-}
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Parse command line arguments
@@ -50,14 +44,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     break;
                 }
 
-                if !has_supported_modifiers(&key) {
-                    continue;
-                }
-
+                let modifiers = key.modifiers;
                 let key = layout_aware(key.code);
                 match key {
-                    KeyCode::Char('q') => break,
-                    KeyCode::Char('c') => {
+                    KeyCode::Char('q') if modifiers.is_empty() => break,
+                    KeyCode::Char('c') if modifiers.is_empty() => {
                         app.set_mode_if_inactive(Mode::Clock {
                             timezone: None,
                             no_date: false,
@@ -65,10 +56,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                             millis: false,
                         });
                     }
-                    KeyCode::Char('w') => {
+                    KeyCode::Char('w') if modifiers.is_empty() => {
                         app.set_mode_if_inactive(Mode::Stopwatch);
                     }
-                    KeyCode::Char('t') => {
+                    KeyCode::Char('t') if modifiers.is_empty() => {
                         app.set_mode_if_inactive(Mode::Timer {
                             durations: vec![ChronoDuration::minutes(5)],
                             titles: vec![],
@@ -82,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             sound: None,
                         });
                     }
-                    _ => app.on_key(key),
+                    _ => app.on_key_with_modifiers(key, modifiers),
                 }
             }
         }
@@ -100,20 +91,4 @@ fn main() -> Result<(), Box<dyn Error>> {
     io::stdout().flush()?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-    #[test]
-    fn shifted_plus_has_supported_modifiers() {
-        for code in [KeyCode::Char('+'), KeyCode::Char('=')] {
-            let key = KeyEvent::new(code, KeyModifiers::SHIFT);
-            assert!(super::has_supported_modifiers(&key));
-        }
-
-        let control_plus = KeyEvent::new(KeyCode::Char('+'), KeyModifiers::CONTROL);
-        assert!(!super::has_supported_modifiers(&control_plus));
-    }
 }

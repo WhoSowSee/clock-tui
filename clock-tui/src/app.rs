@@ -9,7 +9,7 @@ use chrono::NaiveTime;
 use chrono::TimeZone;
 use chrono_tz::Tz;
 use clap::Subcommand;
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
     style::{Color, Style},
     Frame,
@@ -443,21 +443,29 @@ impl App {
     }
 
     pub fn on_key(&mut self, key: KeyCode) {
+        self.on_key_with_modifiers(key, KeyModifiers::NONE);
+    }
+
+    pub fn on_key_with_modifiers(&mut self, key: KeyCode, modifiers: KeyModifiers) {
         if let Some(w) = self.clock.as_mut() {
-            match key {
-                KeyCode::Char('d') => w.toggle_date(),
-                KeyCode::Char('s') => w.toggle_secs(),
-                KeyCode::Char('m') => w.toggle_millis(),
-                _ => {}
+            if modifiers.is_empty() {
+                match key {
+                    KeyCode::Char('d') => w.toggle_date(),
+                    KeyCode::Char('s') => w.toggle_secs(),
+                    KeyCode::Char('m') => w.toggle_millis(),
+                    _ => {}
+                }
             }
         } else if let Some(w) = self.timer.as_mut() {
-            match key {
-                KeyCode::Char('=') | KeyCode::Char('+') => w.adjust_remaining_seconds(1),
-                KeyCode::Char('-') => w.adjust_remaining_seconds(-1),
-                _ => handle_key(w, key),
+            if let Some(adjustment) = timer_adjustment(key, modifiers) {
+                w.adjust_remaining_time(adjustment);
+            } else if modifiers.is_empty() {
+                handle_key(w, key);
             }
         } else if let Some(w) = self.stopwatch.as_mut() {
-            handle_key(w, key);
+            if modifiers.is_empty() {
+                handle_key(w, key);
+            }
         }
     }
 
@@ -472,6 +480,23 @@ impl App {
         if let Some(ref w) = self.stopwatch {
             println!("Stopwatch time: {}", w.get_display_time());
         }
+    }
+}
+
+fn timer_adjustment(key: KeyCode, modifiers: KeyModifiers) -> Option<Duration> {
+    let alt_shift = KeyModifiers::ALT | KeyModifiers::SHIFT;
+    let step = if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT {
+        Duration::seconds(1)
+    } else if modifiers == KeyModifiers::ALT || modifiers == alt_shift {
+        Duration::minutes(1)
+    } else {
+        return None;
+    };
+
+    match key {
+        KeyCode::Char('=') | KeyCode::Char('+') => Some(step),
+        KeyCode::Char('-') if modifiers.is_empty() || modifiers == KeyModifiers::ALT => Some(-step),
+        _ => None,
     }
 }
 
@@ -864,8 +889,8 @@ mod tests {
     }
 
     #[test]
-    fn timer_adjustment_keys_change_remaining_time_by_one_second() {
-        use crossterm::event::KeyCode;
+    fn timer_adjustment_keys_change_remaining_time_by_seconds_or_minutes() {
+        use crossterm::event::{KeyCode, KeyModifiers};
 
         let mut app = App::default();
         app.set_mode(Mode::Timer {
@@ -881,8 +906,21 @@ mod tests {
             sound: None,
         });
 
-        for (key, expected_seconds) in [('=', 11), ('-', 10), ('+', 11)] {
-            app.on_key(KeyCode::Char(key));
+        let alt_shift = KeyModifiers::ALT | KeyModifiers::SHIFT;
+        for (key, modifiers, expected_seconds) in [
+            ('=', KeyModifiers::NONE, 11),
+            ('-', KeyModifiers::NONE, 10),
+            ('+', KeyModifiers::NONE, 11),
+            ('+', KeyModifiers::SHIFT, 12),
+            ('=', KeyModifiers::SHIFT, 13),
+            ('=', KeyModifiers::ALT, 73),
+            ('-', KeyModifiers::ALT, 13),
+            ('+', KeyModifiers::ALT, 73),
+            ('+', alt_shift, 133),
+            ('=', alt_shift, 193),
+            ('+', KeyModifiers::CONTROL, 193),
+        ] {
+            app.on_key_with_modifiers(KeyCode::Char(key), modifiers);
             assert_eq!(
                 app.timer.as_ref().unwrap().remaining_time().0,
                 Duration::seconds(expected_seconds)
